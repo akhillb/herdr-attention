@@ -1,0 +1,14 @@
+{
+  "name": "herdr-cal",
+  "version": "0.1.0",
+  "private": true,
+  "description": "herdr plugin: shows your next meeting with a live countdown and highlights it 10 minutes before it starts.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test",
+    "demo": "CAL_DEMO=1 node src/board.js"
+  }
+}

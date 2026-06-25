@@ -1,0 +1,18 @@
+# Secrets / credentials — never commit
+.env
+.env.*
+*.oauth
+*oauth*.json
+client_secret*.json
+credentials*.json
+gcalcli_*
+.gcalcli*
+
+# Logs / OS / editor
+*.log
+.DS_Store
+.idea/
+.vscode/
+
+# Node
+node_modules/

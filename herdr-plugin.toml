@@ -1,0 +1,24 @@
+id = "cal"
+name = "Next Meeting"
+version = "0.1.0"
+min_herdr_version = "0.7.0"
+description = "Shows your next upcoming meeting with a live countdown and highlights it 10 minutes before it starts. Calendar data via gcalcli."
+platforms = ["macos", "linux"]
+
+[[panes]]
+id = "next"
+title = "Next Meeting"
+placement = "split"
+command = ["node", "src/board.js"]
+
+[[actions]]
+id = "open"
+title = "Open Next Meeting"
+contexts = ["global"]
+command = ["sh", "-c", "\"$HERDR_BIN_PATH\" plugin pane open \"$HERDR_PLUGIN_ID\" next"]
+
+[[actions]]
+id = "setup"
+title = "Calendar setup help"
+contexts = ["global"]
+command = ["node", "src/setup.js"]
