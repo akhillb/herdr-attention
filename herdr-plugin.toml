@@ -22,3 +22,7 @@ id = "setup"
 title = "Calendar setup help"
 contexts = ["global"]
 command = ["node", "src/setup.js"]
+
+[[events]]
+on = "workspace.created"
+command = ["node", "src/on-workspace.js"]
