@@ -50,7 +50,9 @@ async function poll() {
 
 function openSelected() {
   const item = visibleList()[selected];
-  if (!item || !item.link) return;
+  // Re-check the scheme at the call site (defence in depth): never hand a value
+  // that could be read as a flag/arg to open/xdg-open.
+  if (!item || !/^https?:\/\//i.test(item.link || '')) return;
   const cmd = process.platform === 'darwin' ? 'open' : 'xdg-open';
   execFile(cmd, [item.link], () => {});
 }

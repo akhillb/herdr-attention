@@ -17,6 +17,13 @@ function toDate(date, time) {
   return new Date(`${date}T${time}`);
 }
 
+// Only accept http(s) links. Rejecting everything else stops a calendar-supplied
+// value (e.g. one starting with "-", or a "file://" scheme) from being smuggled
+// as a flag/argument when the link is later handed to `open`/`xdg-open`.
+function safeLink(url) {
+  return /^https?:\/\//i.test(url) ? url : '';
+}
+
 // Parse gcalcli TSV into normalized, start-sorted events. Tolerant of short or
 // garbage lines: anything without a valid start time is skipped rather than throwing.
 function parseTsv(text) {
@@ -34,7 +41,7 @@ function parseTsv(text) {
       title: row.title || '(no title)',
       start,
       end: toDate(row.end_date, row.end_time),
-      link: row.conf_uri || row.hangout_link || row.html_link || '',
+      link: safeLink(row.conf_uri || row.hangout_link || row.html_link || ''),
       location: row.location || '',
     });
   }
@@ -82,4 +89,4 @@ function fetchEvents({ demo = false, window = 'in 12 hours', gcalcli = 'gcalcli'
   });
 }
 
-module.exports = { parseTsv, demoEvents, fetchEvents, COLUMNS };
+module.exports = { parseTsv, demoEvents, fetchEvents, safeLink, COLUMNS };

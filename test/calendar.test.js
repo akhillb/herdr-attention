@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { parseTsv, fetchEvents, demoEvents } = require('../src/calendar');
+const { parseTsv, fetchEvents, demoEvents, safeLink } = require('../src/calendar');
 
 // Columns: start_date start_time end_date end_time html_link hangout_link
 //          conf_type conf_uri title location
@@ -36,6 +36,21 @@ test('malformed and all-day (no time) lines are skipped', () => {
 test('link prefers conference URI over hangout/html', () => {
   const e = parseTsv('2026-06-25\t14:00\t2026-06-25\t14:30\thttps://html\t\t\thttps://conf\tT\t')[0];
   assert.equal(e.link, 'https://conf');
+});
+
+test('safeLink rejects non-http(s) and flag-like values', () => {
+  assert.equal(safeLink('https://meet.google.com/x'), 'https://meet.google.com/x');
+  assert.equal(safeLink('http://example.com'), 'http://example.com');
+  assert.equal(safeLink('-e'), '');
+  assert.equal(safeLink('--args'), '');
+  assert.equal(safeLink('file:///etc/passwd'), '');
+  assert.equal(safeLink('javascript:alert(1)'), '');
+  assert.equal(safeLink(''), '');
+});
+
+test('parseTsv strips an unsafe link from an event', () => {
+  const e = parseTsv('2026-06-25\t14:00\t2026-06-25\t14:30\tfile:///etc/passwd\t\t\t\tT\t')[0];
+  assert.equal(e.link, '');
 });
 
 test('demoEvents are all in the future', () => {
