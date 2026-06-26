@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert');
-const { parseTsv, fetchEvents, demoEvents, safeLink } = require('../src/calendar');
+const { parseTsv, fetchEvents, demoEvents, safeLink, parseCalendarList } = require('../src/calendar');
 
 // Columns: start_date start_time end_date end_time html_link hangout_link
 //          conf_type conf_uri title location
@@ -51,6 +51,23 @@ test('safeLink rejects non-http(s) and flag-like values', () => {
 test('parseTsv strips an unsafe link from an event', () => {
   const e = parseTsv('2026-06-25\t14:00\t2026-06-25\t14:30\tfile:///etc/passwd\t\t\t\tT\t')[0];
   assert.equal(e.link, '');
+});
+
+test('parseCalendarList returns only owner calendars', () => {
+  const text = [
+    ' Access  Title',
+    ' ------  -----',
+    '  owner  akhil.l@browserstack.com',
+    ' reader  Holidays in India',
+    ' reader  Oberoi Commerz II-26th Floor-26-Quasar (10)',
+    ' writer  Shared team cal',
+  ].join('\n');
+  assert.deepEqual(parseCalendarList(text), ['akhil.l@browserstack.com']);
+});
+
+test('parseCalendarList handles empty / no-owner input', () => {
+  assert.deepEqual(parseCalendarList(''), []);
+  assert.deepEqual(parseCalendarList(' reader  Holidays in India'), []);
 });
 
 test('demoEvents are all in the future', () => {

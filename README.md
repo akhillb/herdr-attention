@@ -83,6 +83,7 @@ herdr plugin install <owner>/herdr-cal
 | `CAL_DEMO` | unset | `1` → demo data, no gcalcli |
 | `CAL_IMMINENT_MIN` | `10` | Minutes-before threshold for the highlight |
 | `CAL_WINDOW` | `in 12 hours` | gcalcli look-ahead window |
+| `CAL_CALENDARS` | *(your owned calendars)* | Comma-separated calendar titles to include. Unset → auto-detects the calendars you own (excludes holidays, room/resource, and other subscribed calendars). |
 | `CAL_POLL_SEC` | `60` | Calendar re-poll interval (countdown still ticks every second) |
 
 ## Tests

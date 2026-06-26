@@ -65,8 +65,30 @@ function demoEvents(now = Date.now()) {
   ];
 }
 
+// Parse `gcalcli list` (rendered with --nocolor) into the titles of calendars
+// the account owns — i.e. "your own" calendars, excluding subscribed/reader ones
+// like holidays and meeting-room resources.
+function parseCalendarList(text) {
+  const owned = [];
+  for (const line of String(text).split('\n')) {
+    const m = line.match(/^\s*(owner|reader|writer|freebusy)\s+(.+?)\s*$/);
+    if (m && m[1] === 'owner') owned.push(m[2]);
+  }
+  return owned;
+}
+
+// Resolve owned calendar titles via gcalcli. Returns [] on any failure.
+function detectOwnedCalendars({ gcalcli = 'gcalcli' } = {}) {
+  return new Promise((resolve) => {
+    execFile(gcalcli, ['--nocolor', 'list'], { timeout: 30000 }, (err, stdout) => {
+      resolve(err ? [] : parseCalendarList(stdout));
+    });
+  });
+}
+
 // Returns { ok, events, error }. Never rejects.
-function fetchEvents({ demo = false, window = 'in 12 hours', gcalcli = 'gcalcli' } = {}) {
+// `calendars`: restrict to these calendar titles ([] = every visible calendar).
+function fetchEvents({ demo = false, window = 'in 12 hours', gcalcli = 'gcalcli', calendars = [] } = {}) {
   if (demo) {
     return Promise.resolve({ ok: true, events: demoEvents() });
   }
@@ -75,6 +97,7 @@ function fetchEvents({ demo = false, window = 'in 12 hours', gcalcli = 'gcalcli'
       '--nocolor', 'agenda', 'now', window, '--tsv',
       '--details', 'url', '--details', 'conference', '--details', 'location',
     ];
+    for (const c of calendars) args.push('--calendar', c);
     execFile(gcalcli, args, { timeout: 45000 }, (err, stdout, stderr) => {
       if (err) {
         const raw = String(stderr || err.message || err);
@@ -90,4 +113,7 @@ function fetchEvents({ demo = false, window = 'in 12 hours', gcalcli = 'gcalcli'
   });
 }
 
-module.exports = { parseTsv, demoEvents, fetchEvents, safeLink, COLUMNS };
+module.exports = {
+  parseTsv, demoEvents, fetchEvents, safeLink,
+  parseCalendarList, detectOwnedCalendars, COLUMNS,
+};

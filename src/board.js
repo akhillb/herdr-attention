@@ -3,7 +3,7 @@
 
 const readline = require('node:readline');
 const { execFile } = require('node:child_process');
-const { fetchEvents } = require('./calendar');
+const { fetchEvents, detectOwnedCalendars } = require('./calendar');
 const { nextMeeting } = require('./model');
 const { render } = require('./render');
 const { reportAgent } = require('./herdr');
@@ -22,7 +22,19 @@ let view = null;
 let lastImminent = null;
 let lastOkAt = 0;
 let loaded = false;
+let calendars = []; // [] = all visible calendars; resolved once at startup
 const staleThresholdMs = cfg.pollMs * 2; // show "stale" only after ~2 missed refreshes
+
+// Restrict to your own calendars by default (CAL_CALENDARS overrides with a
+// comma-separated list); falls back to all if detection fails.
+async function resolveCalendars() {
+  const env = process.env.CAL_CALENDARS;
+  if (env && env.trim()) {
+    calendars = env.split(',').map((s) => s.trim()).filter(Boolean);
+  } else if (!cfg.demo) {
+    calendars = await detectOwnedCalendars({});
+  }
+}
 
 function visibleList() {
   if (!view || !view.next) return [];
@@ -56,7 +68,7 @@ function draw() {
 }
 
 async function poll() {
-  const res = await fetchEvents({ demo: cfg.demo, window: cfg.window });
+  const res = await fetchEvents({ demo: cfg.demo, window: cfg.window, calendars });
   if (res.ok) {
     events = res.events || [];
     sourceErr = null;
@@ -120,5 +132,6 @@ process.on('SIGTERM', () => { cleanup(); process.exit(0); });
 
 setupInput();
 process.stdout.on('resize', draw);
-runPoll();
+draw(); // initial "Loading…" frame
+resolveCalendars().finally(runPoll);
 setInterval(draw, 1000);
