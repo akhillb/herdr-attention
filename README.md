@@ -104,6 +104,16 @@ items, and tiers them by `deadline`. Items with no `deadline` land in WATCHING.
 | `CAL_WINDOW` | `in 12 hours` | calendar look-ahead window |
 | `CAL_CALENDARS` | *(owned calendars)* | comma-separated calendar titles to include |
 
+### Per-user config file
+
+Instead of env vars, drop a `config.json` in the plugin's config dir
+(`herdr plugin config-dir attention`) — it applies to every pane (auto-docked,
+keybinding, manual) without a server restart. Env vars override it.
+
+```json
+{ "soonMin": 30, "nowMin": 10, "pollSec": 60, "window": "in 12 hours" }
+```
+
 ## Tests
 
 ```bash

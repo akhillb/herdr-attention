@@ -1,8 +1,25 @@
 #!/usr/bin/env node
 'use strict';
 
+const fs = require('node:fs');
+const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { enabledAddons } = require('./addons');
+
+// Per-user settings from HERDR_PLUGIN_CONFIG_DIR/config.json (e.g. {"soonMin":30}).
+// Env vars take precedence over the file, which takes precedence over defaults.
+function fileCfg() {
+  const dir = process.env.HERDR_PLUGIN_CONFIG_DIR;
+  if (!dir) return {};
+  try { return JSON.parse(fs.readFileSync(path.join(dir, 'config.json'), 'utf8')) || {}; }
+  catch { return {}; }
+}
+const fc = fileCfg();
+const num = (envName, fileVal, def) => {
+  const e = process.env[envName];
+  if (e != null && e !== '' && !Number.isNaN(Number(e))) return Number(e);
+  return typeof fileVal === 'number' ? fileVal : def;
+};
 const { buildFeed, focusableIds } = require('./model');
 const { render } = require('./render');
 const { reportAgent } = require('./herdr');
@@ -10,10 +27,10 @@ const store = require('./store');
 
 const cfg = {
   demo: process.env.CAL_DEMO === '1' || process.env.ATTENTION_DEMO === '1' || process.argv.includes('--demo'),
-  window: process.env.CAL_WINDOW || 'in 12 hours',
-  pollMs: (Number(process.env.ATTENTION_POLL_SEC) || 60) * 1000,
-  nowMs: (Number(process.env.ATTENTION_NOW_MIN) || 10) * 60000,
-  soonMs: (Number(process.env.ATTENTION_SOON_MIN) || 90) * 60000,
+  window: process.env.CAL_WINDOW || fc.window || 'in 12 hours',
+  pollMs: num('ATTENTION_POLL_SEC', fc.pollSec, 60) * 1000,
+  nowMs: num('ATTENTION_NOW_MIN', fc.nowMin, 10) * 60000,
+  soonMs: num('ATTENTION_SOON_MIN', fc.soonMin, 90) * 60000,
 };
 
 const ROADMAP = [
