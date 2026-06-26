@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { render, fmtCount } = require('../src/render');
 
-const strip = (s) => s.replace(/\x1b\[[0-9;]*m/g, '');
+const strip = (x) => (typeof x === 'string' ? x : x.text).replace(/\x1b\[[0-9;]*m/g, '');
 
 const view = (over = {}) => ({
   clock: '12:00:00', counts: { now: 0, soon: 0, later: 0 },
@@ -62,6 +62,23 @@ test('add-source overlay lists roadmap', () => {
   const out = strip(render(view({ showAdd: true, addList: [{ name: 'Slack', note: 'DMs', colorRole: 'slack' }] })));
   assert.match(out, /ADD A SOURCE/);
   assert.match(out, /Slack/);
+});
+
+test('emits click hotspots for cards and actions', () => {
+  const { hits } = render(view({
+    counts: { now: 1, soon: 0, later: 0 },
+    groups: [{ tier: 'now', label: 'NOW', items: [mtg('Standup', 'now', 5 * 60000)] }],
+  }), { focusId: 'Standup', expandedId: 'Standup' });
+  assert.ok(hits.some((h) => h.target.kind === 'card' && h.target.id === 'Standup'));
+  const actions = hits.filter((h) => h.target.kind === 'action');
+  assert.deepEqual(actions.map((h) => h.target.action).sort(), ['done', 'open', 'snooze']);
+  // every hotspot has a positive row and a col range
+  assert.ok(hits.every((h) => h.row >= 1 && h.col1 >= h.col0));
+});
+
+test('add-source hotspot is present in the footer', () => {
+  const { hits } = render(view());
+  assert.ok(hits.some((h) => h.target.kind === 'add'));
 });
 
 test('fmtCount formats now / m:ss / m / h', () => {

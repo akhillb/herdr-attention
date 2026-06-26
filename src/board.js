@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 'use strict';
 
-const readline = require('node:readline');
 const { execFile } = require('node:child_process');
 const { enabledAddons } = require('./addons');
 const { buildFeed, focusableIds } = require('./model');
@@ -38,6 +37,10 @@ let showAdd = false;
 let toast = null;
 let toastT = null;
 let lastImminent = null;
+let lastHits = [];
+
+const MOUSE_ON = '\x1b[?1000h\x1b[?1006h';
+const MOUSE_OFF = '\x1b[?1000l\x1b[?1006l';
 
 function termWidth() {
   return Math.max(16, Math.min((process.stdout.columns || 44) - 1, 100));
@@ -89,11 +92,12 @@ function draw() {
     lastImminent = imminent;
     reportAgent(imminent ? 'blocked' : 'idle').catch(() => {});
   }
-  const frame = render(view, { focusId, expandedId, snoozeId, width: termWidth() });
+  const { text, hits } = render(view, { focusId, expandedId, snoozeId, width: termWidth() });
+  lastHits = hits;
   // Redraw in place: home, then clear each line to EOL, then clear below. Avoids
   // the full-screen \x1b[2J flash, which some renderers drop on an unfocused pane
   // (leaving the countdown looking frozen even though the data is live).
-  const body = frame.split('\n').map((l) => l + '\x1b[K').join('\r\n');
+  const body = text.split('\n').map((l) => l + '\x1b[K').join('\r\n');
   process.stdout.write('\x1b[H' + body + '\x1b[J');
 }
 
@@ -168,31 +172,81 @@ function move(delta) {
   draw();
 }
 
+// Resolve a click at 1-based (col,row) against the last frame's hotspots.
+function clickAt(col, row) {
+  const hit = lastHits.find((h) => h.row === row && col >= h.col0 && col <= h.col1)
+    || lastHits.find((h) => h.row === row);
+  if (!hit) return;
+  const t = hit.target;
+  if (t.kind === 'card') {
+    if (focusId === t.id) expandedId = expandedId === t.id ? null : t.id;
+    else { focusId = t.id; expandedId = t.id; }
+    snoozeId = null; draw();
+  } else if (t.kind === 'action') {
+    focusId = t.id;
+    if (t.action === 'open') openFocused();
+    else if (t.action === 'done') markDone();
+    else if (t.action === 'snooze') { snoozeId = snoozeId === t.id ? null : t.id; draw(); }
+    else { expandedId = t.id; draw(); }
+  } else if (t.kind === 'snooze') {
+    focusId = t.id; applySnooze(t.key);
+  } else if (t.kind === 'watching') {
+    focusId = t.id; openFocused();
+  } else if (t.kind === 'add') {
+    showAdd = !showAdd; draw();
+  }
+}
+
+function handleKey(ch) {
+  if (ch === '\x03' || ch === 'q') { cleanup(); process.exit(0); }
+  else if (snoozeId && SNOOZE[ch]) applySnooze(ch);
+  else if (ch === '\x1b') { snoozeId = null; showAdd = false; draw(); } // bare ESC
+  else if (ch === 'j') move(1);
+  else if (ch === 'k') move(-1);
+  else if (ch === '\r' || ch === '\n') { expandedId = expandedId === focusId ? null : focusId; draw(); }
+  else if (ch === 'o') openFocused();
+  else if (ch === 's') { snoozeId = snoozeId === focusId ? null : focusId; draw(); }
+  else if (ch === 'x') markDone();
+  else if (ch === 'a' || ch === '+') { showAdd = !showAdd; draw(); }
+  else if (ch === 'r') poll();
+}
+
+// Parse a raw stdin chunk into key presses and SGR mouse events.
+function handleData(buf) {
+  const s = buf.toString('latin1');
+  let i = 0;
+  while (i < s.length) {
+    if (s.startsWith('\x1b[<', i)) {
+      const m = s.slice(i).match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])/);
+      if (m) {
+        const b = +m[1]; const col = +m[2]; const row = +m[3]; const press = m[4] === 'M';
+        if (b === 64) move(-1);                 // wheel up
+        else if (b === 65) move(1);             // wheel down
+        else if (b === 0 && press) clickAt(col, row); // left click
+        i += m[0].length; continue;
+      }
+    }
+    if (s.startsWith('\x1b[A', i)) { move(-1); i += 3; continue; } // up arrow
+    if (s.startsWith('\x1b[B', i)) { move(1); i += 3; continue; }  // down arrow
+    if (s[i] === '\x1b') {
+      const csi = s.slice(i).match(/^\x1b\[[0-9;<]*[ -/]*[@-~]/);
+      if (csi) { i += csi[0].length; continue; } // ignore other escape sequences
+      handleKey('\x1b'); i += 1; continue;
+    }
+    handleKey(s[i]); i += 1;
+  }
+}
+
 function setupInput() {
   if (!process.stdin.isTTY) return;
-  readline.emitKeypressEvents(process.stdin);
   process.stdin.setRawMode(true);
   process.stdin.resume();
-  process.stdin.on('keypress', (str, key) => {
-    if (!key) return;
-    const k = key.name;
-    if (k === 'q' || (key.ctrl && k === 'c')) { cleanup(); process.exit(0); }
-    else if (snoozeId && SNOOZE[str]) applySnooze(str);
-    else if (k === 'escape') { snoozeId = null; showAdd = false; draw(); }
-    else if (k === 'j' || k === 'down') move(1);
-    else if (k === 'k' || k === 'up') move(-1);
-    else if (k === 'return') { expandedId = expandedId === focusId ? null : focusId; draw(); }
-    else if (k === 'o') openFocused();
-    else if (k === 's') { snoozeId = snoozeId === focusId ? null : focusId; draw(); }
-    else if (k === 'x') markDone();
-    else if (k === 'a' || str === '+') { showAdd = !showAdd; draw(); }
-    else if (k === 'r') poll();
-  });
+  process.stdin.on('data', handleData);
 }
 
 function cleanup() {
   if (process.stdin.isTTY) { try { process.stdin.setRawMode(false); } catch {} }
-  process.stdout.write('\x1b[?25h'); // restore cursor
+  process.stdout.write(`\x1b[?25h${MOUSE_OFF}`); // restore cursor + disable mouse
   reportAgent('idle').catch(() => {});
 }
 
@@ -200,7 +254,7 @@ process.on('SIGINT', () => { cleanup(); process.exit(0); });
 process.on('SIGTERM', () => { cleanup(); process.exit(0); });
 
 setupInput();
-process.stdout.write('\x1b[2J\x1b[?25l'); // clear once + hide cursor; thereafter redraw in place
+process.stdout.write(`\x1b[2J\x1b[?25l${MOUSE_ON}`); // clear, hide cursor, enable mouse
 process.stdout.on('resize', draw);
 draw(); // initial loading frame
 resolveConfigs().finally(runPoll);

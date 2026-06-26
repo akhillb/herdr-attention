@@ -1,6 +1,9 @@
 'use strict';
 
-const { paint, color, RESET, tierRole } = require('./palette');
+const { paint, RESET, tierRole } = require('./palette');
+
+const ACTION_KEY = { open: 'o', reply: 'r', snooze: 's', done: 'x' };
+const SNOOZE_OPTS = [['1', '15m'], ['2', '1h'], ['3', '3h'], ['4', 'tomorrow']];
 
 function truncate(str, n) {
   const s = String(str);
@@ -18,6 +21,20 @@ function fmtCount(ms) {
   return `${m}:${String(s % 60).padStart(2, '0')}`;
 }
 
+// Builder that tracks the current 1-based terminal row so we can attach click
+// hotspots ({row, col0, col1, target}) to the lines we emit.
+function makeSink() {
+  const lines = [];
+  const hits = [];
+  return {
+    lines, hits,
+    push(line) { lines.push(line); return lines.length; }, // returns 1-based row
+    // record a full-row hotspot for the line just pushed
+    rowHit(target, width) { hits.push({ row: lines.length, col0: 1, col1: width, target }); },
+    hit(row, col0, col1, target) { hits.push({ row, col0, col1, target }); },
+  };
+}
+
 function header(width, clock) {
   const left = `${paint('●', 'urgent')} ${paint('ATTENTION', 'accent', { bold: true })}`;
   const pad = Math.max(1, width - 'ATTENTION'.length - 2 - clock.length);
@@ -32,19 +49,7 @@ function summary(counts) {
   ].join(paint('  ·  ', 'later'));
 }
 
-const ACTION_KEY = { open: 'o', reply: 'r', snooze: 's', done: 'x' };
-
-function actionsLine(item) {
-  const labels = {
-    open: item.openLabel || 'open', reply: 'reply', snooze: 'snooze', done: 'done',
-  };
-  return (item.actions || []).map((a) => {
-    const k = ACTION_KEY[a] || a[0];
-    return `${paint('[', 'later')}${paint(k, 'accent')}${paint(']', 'later')}${paint(labels[a], 'later')}`;
-  }).join('  ');
-}
-
-function renderItem(L, item, opts, width) {
+function renderItem(S, item, opts, width) {
   const focused = opts.focusId === item.id;
   const expanded = opts.expandedId === item.id;
   const role = tierRole(item.tier);
@@ -52,96 +57,125 @@ function renderItem(L, item, opts, width) {
   const dot = paint('●', role);
   const tag = paint(item.tag.padEnd(5).slice(0, 5), item.colorRole, { bold: true });
   const count = item.countMs == null ? '' : paint(fmtCount(item.countMs), role, { bold: true });
-  const budget = Math.max(8, width - 2 - 2 - 6 - (count ? count.length : 0));
-  const title = focused
-    ? paint(truncate(item.title, budget), 'text', { bold: true })
-    : paint(truncate(item.title, budget), 'text');
-  const head = `${marker}${dot} ${tag} ${title}`;
-  // right-align the count
-  L.push(`${head}  ${count}`);
-  if (item.sub) L.push(`     ${paint(truncate(item.sub, width - 6), 'later')}`);
+  const budget = Math.max(8, width - 14);
+  const title = paint(truncate(item.title, budget), 'text', { bold: focused });
+
+  S.push(`${marker}${dot} ${tag} ${title}  ${count}`);
+  S.rowHit({ kind: 'card', id: item.id }, width);
+  if (item.sub) { S.push(`     ${paint(truncate(item.sub, width - 6), 'later')}`); S.rowHit({ kind: 'card', id: item.id }, width); }
 
   if (expanded && item.context && item.context.length) {
     for (const c of item.context) {
       const lbl = c.label ? paint(`${c.label} `, item.colorRole) : '';
-      L.push(`     ${lbl}${paint(truncate(c.text, width - 8), 'later')}`);
+      S.push(`     ${lbl}${paint(truncate(c.text, width - 8), 'later')}`);
+      S.rowHit({ kind: 'card', id: item.id }, width);
     }
   }
+
   if (opts.snoozeId === item.id) {
-    const optsRow = ['15m', '1h', '3h', 'tomorrow']
-      .map((o) => paint(` ${o} `, 'text', { invert: true })).join(' ');
-    L.push(`     ${paint('snooze →', 'later')} ${optsRow}`);
+    let col = 6 + 'snooze → '.length + 1;
+    const parts = [];
+    const row = S.lines.length + 1;
+    for (const [key, label] of SNOOZE_OPTS) {
+      const plain = ` ${label} `;
+      parts.push(paint(plain, 'text', { invert: true }));
+      S.hit(row, col, col + plain.length - 1, { kind: 'snooze', id: item.id, key });
+      col += plain.length + 1;
+    }
+    S.push(`     ${paint('snooze →', 'later')} ${parts.join(' ')}`);
   } else if (focused || expanded) {
-    L.push(`     ${actionsLine(item)}`);
+    const labels = { open: item.openLabel || 'open', reply: 'reply', snooze: 'snooze', done: 'done' };
+    const row = S.lines.length + 1;
+    let col = 6; // after 5-space indent (1-based)
+    const parts = [];
+    for (const a of item.actions || []) {
+      const k = ACTION_KEY[a] || a[0];
+      const plain = `[${k}]${labels[a]}`;
+      parts.push(`${paint('[', 'later')}${paint(k, 'accent')}${paint(']', 'later')}${paint(labels[a], 'later')}`);
+      S.hit(row, col, col + plain.length - 1, { kind: 'action', id: item.id, action: a });
+      col += plain.length + 2;
+    }
+    S.push(`     ${parts.join('  ')}`);
   }
 }
 
-// Pure: view model -> ANSI string for the pane.
-function render(view, opts = {}) {
-  const width = opts.width || view.width || 46;
-  const L = [];
-  L.push(header(width, view.clock || ''));
-  L.push(paint('─'.repeat(width), 'later'));
-
-  if (view.sourceErr) {
-    L.push('', paint(`⚠ ${view.sourceErr}`, 'soon'), '');
-    if (/not installed|not configured|not found/i.test(view.sourceErr)) {
-      L.push(paint('Setup:', 'later'));
-      L.push('  1. pipx install gcalcli');
-      L.push('  2. create a Google OAuth client (see README)');
-      L.push('  3. gcalcli init');
-    }
-    L.push('', footer(view, width));
-    return L.join('\n');
-  }
-
-  L.push(summary(view.counts));
-
-  if (view.showAdd) {
-    L.push('', paint('ADD A SOURCE', 'accent', { bold: true }) + paint('   [esc]', 'later'));
-    L.push(paint('plugins on the roadmap — each becomes a source', 'later'));
-    for (const f of view.addList || []) {
-      L.push(`${paint('▪', f.colorRole || 'later')} ${paint(f.name, 'text')}`);
-      if (f.note) L.push(`  ${paint(truncate(f.note, width - 2), 'later')}`);
-    }
-    L.push('', footer(view, width));
-    return L.join('\n');
-  }
-
-  const empty = view.counts.now + view.counts.soon + view.counts.later === 0;
-  if (empty) {
-    L.push('', paint(view.loading ? 'Loading…' : 'Nothing needs you right now 🎉', view.loading ? 'later' : 'github'));
-  }
-
-  for (const g of view.groups) {
-    L.push('', paint(g.label, tierRole(g.tier), { bold: true }));
-    for (const item of g.items) renderItem(L, item, opts, width);
-  }
-
-  if (view.watching && view.watching.length) {
-    L.push('', paint('WATCHING', 'later', { bold: true }));
-    for (const item of view.watching) {
-      const tag = paint(item.tag.padEnd(5).slice(0, 5), item.colorRole);
-      const cnt = item.countMs == null ? '' : paint(fmtCount(item.countMs), 'later');
-      L.push(`  ${tag} ${paint(truncate(item.title, width - 14), 'later')}  ${cnt}`);
-    }
-  }
-
-  if (view.staleMs) L.push('', paint(`⟳ stale · last ok ${Math.floor(view.staleMs / 1000)}s ago`, 'later'));
-  if (view.toast) L.push('', paint(view.toast.text, 'text', { invert: true }));
-  L.push('', footer(view, width));
-  return L.join('\n');
-}
-
-function footer(view, width) {
+function footer(S, view, width) {
   const a = (k) => paint(k, 'accent');
   const keys = width < 44
     ? `${a('j/k')} ${a('↵')} ${a('o')} ${a('s')} ${a('x')}`
     : `${a('j/k')} move · ${a('↵')} expand · ${a('o')} open · ${a('s')} snooze · ${a('x')} done`;
+  S.push(paint(keys, 'later'));
+
   const legend = (view.sources || [])
     .map((s) => `${paint('●', s.colorRole)} ${paint(s.tag.toLowerCase(), 'later')}`).join('  ');
-  const add = paint('[+] add', 'later');
-  return [paint(keys, 'later'), `${legend}   ${add}`].join('\n');
+  const legendPlain = (view.sources || []).map((s) => `● ${s.tag.toLowerCase()}`).join('  ');
+  const addPlain = '[+] add';
+  const row = S.lines.length + 1;
+  const col0 = legendPlain.length + 3 + 1;
+  S.push(`${legend}   ${paint(addPlain, 'later')}`);
+  S.hit(row, col0, col0 + addPlain.length - 1, { kind: 'add' });
+}
+
+// Pure: view model -> { text, hits }. hits drive mouse interaction.
+function render(view, opts = {}) {
+  const width = opts.width || view.width || 46;
+  const S = makeSink();
+  S.push(header(width, view.clock || ''));
+  S.push(paint('─'.repeat(width), 'later'));
+
+  if (view.sourceErr) {
+    S.push(''); S.push(paint(`⚠ ${view.sourceErr}`, 'soon')); S.push('');
+    if (/not installed|not configured|not found/i.test(view.sourceErr)) {
+      S.push(paint('Setup:', 'later'));
+      S.push('  1. pipx install gcalcli');
+      S.push('  2. create a Google OAuth client (see README)');
+      S.push('  3. gcalcli init');
+    }
+    S.push('');
+    footer(S, view, width);
+    return { text: S.lines.join('\n'), hits: S.hits };
+  }
+
+  S.push(summary(view.counts));
+
+  if (view.showAdd) {
+    S.push(''); S.push(paint('ADD A SOURCE', 'accent', { bold: true }) + paint('   [esc]', 'later'));
+    S.push(paint('plugins on the roadmap — each becomes a source', 'later'));
+    for (const f of view.addList || []) {
+      S.push(`${paint('▪', f.colorRole || 'later')} ${paint(f.name, 'text')}`);
+      if (f.note) S.push(`  ${paint(truncate(f.note, width - 2), 'later')}`);
+    }
+    S.push('');
+    footer(S, view, width);
+    return { text: S.lines.join('\n'), hits: S.hits };
+  }
+
+  const empty = view.counts.now + view.counts.soon + view.counts.later === 0;
+  if (empty) {
+    S.push('');
+    S.push(paint(view.loading ? 'Loading…' : 'Nothing needs you right now 🎉', view.loading ? 'later' : 'github'));
+  }
+
+  for (const g of view.groups) {
+    S.push(''); S.push(paint(g.label, tierRole(g.tier), { bold: true }));
+    for (const item of g.items) renderItem(S, item, opts, width);
+  }
+
+  if (view.watching && view.watching.length) {
+    S.push(''); S.push(paint('WATCHING', 'later', { bold: true }));
+    for (const item of view.watching) {
+      const tag = paint(item.tag.padEnd(5).slice(0, 5), item.colorRole);
+      const cnt = item.countMs == null ? '' : paint(fmtCount(item.countMs), 'later');
+      S.push(`  ${tag} ${paint(truncate(item.title, width - 14), 'later')}  ${cnt}`);
+      S.rowHit({ kind: 'watching', id: item.id }, width);
+    }
+  }
+
+  if (view.staleMs) { S.push(''); S.push(paint(`⟳ stale · last ok ${Math.floor(view.staleMs / 1000)}s ago`, 'later')); }
+  if (view.toast) { S.push(''); S.push(paint(view.toast.text, 'text', { invert: true })); }
+  S.push('');
+  footer(S, view, width);
+  return { text: S.lines.join('\n'), hits: S.hits };
 }
 
 module.exports = { render, fmtCount, truncate };
