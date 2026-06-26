@@ -22,5 +22,16 @@ Open the pane:             herdr plugin pane open --plugin attention --entrypoin
 Preview the UI without any setup:
                            ATTENTION_DEMO=1 node src/board.js
 
+Slack source (read-only):
+1. api.slack.com/apps → Create New App → From scratch
+2. OAuth & Permissions → add User Token Scopes:
+     search:read  im:history  mpim:history  users:read  channels:history  groups:history
+3. Install to Workspace (a workspace admin may need to approve)
+4. Copy the User OAuth Token (xoxp-…) and store it as either:
+     - SLACK_USER_TOKEN env var, or
+     - "slackToken" in the plugin config.json, or
+     - a file named slack_token in the plugin config dir
+   (config dir: herdr plugin config-dir attention)
+
 Add a source: drop a module in src/addons/ and register it in src/addons/index.js.
 `);

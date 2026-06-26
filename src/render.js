@@ -171,6 +171,10 @@ function render(view, opts = {}) {
     }
   }
 
+  if (view.notes && view.notes.length) {
+    S.push('');
+    for (const n of view.notes) S.push(paint(`⚠ ${n}`, 'later'));
+  }
   if (view.staleMs) { S.push(''); S.push(paint(`⟳ stale · last ok ${Math.floor(view.staleMs / 1000)}s ago`, 'later')); }
   if (view.toast) { S.push(''); S.push(paint(view.toast.text, 'text', { invert: true })); }
   S.push('');

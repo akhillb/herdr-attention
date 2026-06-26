@@ -34,7 +34,6 @@ const cfg = {
 };
 
 const ROADMAP = [
-  { name: 'Slack', note: 'unanswered DMs & @-mentions', colorRole: 'slack' },
   { name: 'Email / Gmail', note: 'flagged threads awaiting your reply', colorRole: 'mail' },
   { name: 'GitHub', note: 'review requests & changes requested', colorRole: 'github' },
   { name: 'Jira / Linear', note: 'tickets assigned to you, due soon', colorRole: 'accent' },
@@ -96,10 +95,16 @@ function buildView() {
   const c = new Date();
   const clock = [c.getHours(), c.getMinutes(), c.getSeconds()].map((n) => String(n).padStart(2, '0')).join(':');
 
+  // Per-source status (e.g. "slack: not connected") when another source is
+  // working — so a misconfigured/disconnected source isn't silently invisible.
+  const notes = sourceErr ? [] : addons
+    .filter((a) => caches[a.id] && caches[a.id].err && caches[a.id].lastOkAt === 0)
+    .map((a) => `${a.meta.tag.toLowerCase()}: ${caches[a.id].err}`);
+
   return {
     clock, counts: feed.counts, groups: feed.groups, watching: feed.watching,
     sources: addons.map((a) => ({ tag: a.meta.tag, colorRole: a.meta.colorRole })),
-    showAdd, addList: ROADMAP, toast, sourceErr, staleMs,
+    showAdd, addList: ROADMAP, toast, sourceErr, staleMs, notes,
     loading: !loaded && !sourceErr, width: termWidth(),
   };
 }

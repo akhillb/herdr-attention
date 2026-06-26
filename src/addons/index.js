@@ -5,8 +5,9 @@
 // then add it to ALL below. The board polls every enabled addon and merges
 // their items into the unified Attention feed.
 const calendar = require('./calendar');
+const slack = require('./slack');
 
-const ALL = [calendar];
+const ALL = [calendar, slack];
 
 function enabledAddons() {
   // Future: filter by config/env (e.g. ATTENTION_SOURCES="cal,slack").

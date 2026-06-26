@@ -7,6 +7,8 @@ client_secret*.json
 credentials*.json
 gcalcli_*
 .gcalcli*
+slack_token
+*.slacktoken
 
 # Logs / OS / editor
 *.log
