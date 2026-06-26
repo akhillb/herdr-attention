@@ -89,9 +89,12 @@ function draw() {
     lastImminent = imminent;
     reportAgent(imminent ? 'blocked' : 'idle').catch(() => {});
   }
-  process.stdout.write('\x1b[2J\x1b[H' + render(view, {
-    focusId, expandedId, snoozeId, width: termWidth(),
-  }));
+  const frame = render(view, { focusId, expandedId, snoozeId, width: termWidth() });
+  // Redraw in place: home, then clear each line to EOL, then clear below. Avoids
+  // the full-screen \x1b[2J flash, which some renderers drop on an unfocused pane
+  // (leaving the countdown looking frozen even though the data is live).
+  const body = frame.split('\n').map((l) => l + '\x1b[K').join('\r\n');
+  process.stdout.write('\x1b[H' + body + '\x1b[J');
 }
 
 async function resolveConfigs() {
@@ -189,6 +192,7 @@ function setupInput() {
 
 function cleanup() {
   if (process.stdin.isTTY) { try { process.stdin.setRawMode(false); } catch {} }
+  process.stdout.write('\x1b[?25h'); // restore cursor
   reportAgent('idle').catch(() => {});
 }
 
@@ -196,6 +200,7 @@ process.on('SIGINT', () => { cleanup(); process.exit(0); });
 process.on('SIGTERM', () => { cleanup(); process.exit(0); });
 
 setupInput();
+process.stdout.write('\x1b[2J\x1b[?25l'); // clear once + hide cursor; thereafter redraw in place
 process.stdout.on('resize', draw);
 draw(); // initial loading frame
 resolveConfigs().finally(runPoll);
