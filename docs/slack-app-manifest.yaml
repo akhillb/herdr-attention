@@ -1,0 +1,32 @@
+# Slack app manifest for the herdr-attention Slack source (read-only user token).
+#
+# Fastest setup:
+#   1. https://api.slack.com/apps  →  Create New App  →  From an app manifest
+#   2. Pick your workspace, paste this YAML, Create
+#   3. Install to Workspace (an admin may need to approve)
+#   4. OAuth & Permissions → copy the "User OAuth Token" (xoxp-…)
+#   5. Put it in the plugin config:
+#        ~/.config/herdr/plugins/config/attention/config.json → { "slackToken": "xoxp-…" }
+#      (or export SLACK_USER_TOKEN, or a slack_token file in that dir)
+#
+# These are all READ-ONLY user scopes — no write, no posting.
+
+display_information:
+  name: herdr-attention
+  description: Read-only attention feed — surfaces my unanswered DMs and @-mentions.
+  background_color: "#1a1d21"
+
+oauth_config:
+  scopes:
+    user:
+      - search:read       # find @-mentions of me
+      - im:history        # read my direct messages
+      - mpim:history      # read my group direct messages
+      - users:read        # resolve user IDs to names
+      - channels:history  # mention context in public channels
+      - groups:history    # mention context in private channels
+
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
