@@ -46,7 +46,7 @@ function footer(width, staleMs) {
 
 // Pure: view model (+ render opts) -> ANSI string for the pane.
 function render(view, opts = {}) {
-  const { sourceErr = null, demo = false, selected = 0, width = 58, staleMs = 0 } = opts;
+  const { sourceErr = null, demo = false, selected = 0, width = 58, staleMs = 0, loading = false } = opts;
   const L = [];
   L.push(`${C.bold}${C.cyan} Next Meeting ${C.reset}${demo ? `${C.dim}(demo)${C.reset}` : ''}`);
   L.push(`${C.gray}${'─'.repeat(width)}${C.reset}`);
@@ -65,7 +65,10 @@ function render(view, opts = {}) {
   }
 
   if (!view || !view.next) {
-    L.push('', `${C.green}No upcoming meetings 🎉${C.reset}`, '', footer(width, staleMs));
+    const msg = loading
+      ? `${C.dim}Loading…${C.reset}`
+      : `${C.green}No upcoming meetings 🎉${C.reset}`;
+    L.push('', msg, '', footer(width, staleMs));
     return L.join('\n');
   }
 

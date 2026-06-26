@@ -21,6 +21,7 @@ let selected = 0;
 let view = null;
 let lastImminent = null;
 let lastOkAt = 0;
+let loaded = false;
 const staleThresholdMs = cfg.pollMs * 2; // show "stale" only after ~2 missed refreshes
 
 function visibleList() {
@@ -35,7 +36,8 @@ function recompute() {
 }
 
 function termWidth() {
-  return Math.max(24, Math.min(process.stdout.columns || 58, 100));
+  // Subtract a column for pane borders so full-width lines don't wrap.
+  return Math.max(16, Math.min((process.stdout.columns || 40) - 1, 100));
 }
 
 function draw() {
@@ -49,6 +51,7 @@ function draw() {
     : 0;
   process.stdout.write('\x1b[2J\x1b[H' + render(view, {
     sourceErr, demo: cfg.demo, selected, width: termWidth(), staleMs,
+    loading: !loaded && !sourceErr,
   }));
 }
 
@@ -58,6 +61,7 @@ async function poll() {
     events = res.events || [];
     sourceErr = null;
     lastOkAt = Date.now();
+    loaded = true;
   } else if (/not installed|not configured|not found/i.test(res.error) || lastOkAt === 0) {
     // Hard failure: gcalcli unavailable, or we have never succeeded — show it.
     sourceErr = res.error;
